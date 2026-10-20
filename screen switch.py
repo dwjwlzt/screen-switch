@@ -123,16 +123,11 @@ def _autostart_uninstall():
         print("当前未设置开机自启")
 
 
-def _autostart_status():
+def _autostart_status_text():
     vbs_path = _startup_vbs_path()
     if os.path.isfile(vbs_path):
-        with open(vbs_path, "r", encoding="utf-8") as f:
-            content = f.read()
-        print("开机自启: 已开启")
-        print(f"VBS 路径: {vbs_path}")
-        print(f"内容预览: {content.strip()}")
-    else:
-        print("开机自启: 未开启")
+        return f"开机自启: 已开启 ({vbs_path})"
+    return "开机自启: 未开启"
 
 
 def _write_state(src: InputSource):
@@ -185,27 +180,27 @@ def _next_in_cycle(vcp: int | None, cached: str | None) -> InputSource:
     return CYCLE[0]
 
 
-def switch(target: str = None):
-    target = (target or "toggle").lower().strip()
+def _execute(action: str) -> dict:
+    action = (action or "toggle").lower().strip()
 
-    if target.startswith("autostart"):
-        parts = target.split()
-        action = parts[1] if len(parts) > 1 else "status"
+    if action.startswith("autostart"):
+        parts = action.split()
+        sub = parts[1] if len(parts) > 1 else "status"
         port = parts[2] if len(parts) > 2 and parts[2] in PORT_MAP else "dp"
-        if action == "enable":
-            _autostart_install(port)
-        elif action == "disable":
+        if sub == "enable":
+            try:
+                _autostart_install(port)
+                return {"ok": True, "message": f"已安装开机自启 ({port.upper()})"}
+            except SystemExit:
+                return {"ok": False, "message": "找不到 pythonw.exe"}
+        elif sub == "disable":
             _autostart_uninstall()
-        elif action == "status":
-            _autostart_status()
-        else:
-            print("用法:")
-            print("  python switch_monitor.py autostart enable [dp|hdmi1|hdmi2]")
-            print("  python switch_monitor.py autostart disable")
-            print("  python switch_monitor.py autostart status")
-        return
+            return {"ok": True, "message": "已取消开机自启"}
+        elif sub == "status":
+            return {"ok": True, "message": _autostart_status_text()}
+        return {"ok": False, "message": "未知 autostart 操作"}
 
-    if target in ("on", "poweron"):
+    if action in ("on", "poweron"):
         if _win32_monitor_power(_MONITORPOWER_ON):
             time.sleep(1.5)
         try:
@@ -213,10 +208,9 @@ def switch(target: str = None):
             if monitors:
                 with monitors[0] as mon:
                     mon.set_power_mode(PowerMode.on)
-            print("已切换到 on ✓")
+            return {"ok": True, "message": "已开机"}
         except Exception:
-            print("已切换到 on ✓ (通过 Windows API 唤醒)")
-        return
+            return {"ok": True, "message": "已开机 (通过 Windows API)"}
 
     try:
         monitors = list(get_monitors())
@@ -224,36 +218,35 @@ def switch(target: str = None):
         monitors = []
 
     if not monitors:
-        print("未检测到显示器")
-        sys.exit(1)
+        return {"ok": False, "message": "未检测到显示器"}
 
     mon = monitors[0]
 
-    if target == "status":
+    if action == "status":
         with mon:
             vcp = _query_vcp(mon)
+            cached = _read_state()
+            current = "未知"
             if vcp is not None:
-                name = VCP_NAME_MAP.get(vcp, f"VCP={vcp}")
-                print(f"当前输入源: {name}")
-            else:
-                cached = _read_state()
-                if cached:
-                    print(f"当前输入源: ? (上次记录为 {cached})")
-                else:
-                    print("无法读取当前输入源 (HDMI 通道不支持读)")
+                current = VCP_NAME_MAP.get(vcp, f"VCP={vcp}")
+            elif cached:
+                current = f"? (上次记录 {cached})"
             try:
                 pm = mon.get_power_mode()
-                print(f"当前电源状态: {pm.name}")
+                power = pm.name
             except Exception:
-                print("电源状态: ? (无法读取)")
-        return
+                power = "未知"
+            return {
+                "ok": True,
+                "message": f"输入源: {current}, 电源: {power}",
+                "input_source": current,
+                "power": power,
+            }
 
-    if target in POWER_MAP:
-        pm = POWER_MAP[target]
+    if action in POWER_MAP:
+        pm = POWER_MAP[action]
         with mon:
-            print(f"切换电源状态 -> {pm.name}...")
             mon.set_power_mode(pm)
-
         if pm != PowerMode.on:
             win32_action = {
                 PowerMode.standby: _MONITORPOWER_STANDBY,
@@ -263,44 +256,44 @@ def switch(target: str = None):
             }.get(pm)
             if win32_action is not None:
                 _win32_monitor_power(win32_action)
-
         time.sleep(1)
-        print(f"已切换到 {pm.name} ✓")
-        return
+        return {"ok": True, "message": f"电源 -> {pm.name}"}
 
-    if target == "toggle":
+    if action == "toggle":
         with mon:
             vcp = _query_vcp(mon)
             cached = _read_state()
             next_src = _next_in_cycle(vcp, cached)
-            print(f"切换到 {LABEL_MAP[next_src]}...")
             mon.set_input_source(next_src)
             _write_state(next_src)
             time.sleep(1)
-            print(f"已切换到 {LABEL_MAP[next_src]} ✓")
-        return
+            return {"ok": True, "message": f"已切换到 {LABEL_MAP[next_src]}"}
 
-    if target not in PORT_MAP:
-        print("用法:")
-        print("  python switch_monitor.py dp      切到 DP")
-        print("  python switch_monitor.py hdmi1   切到 HDMI1")
-        print("  python switch_monitor.py hdmi2   切到 HDMI2")
-        print("  python switch_monitor.py toggle  DP / HDMI1 / HDMI2 循环切换")
-        print("  python switch_monitor.py status  查询状态")
-        print("  python switch_monitor.py on      开机")
-        print("  python switch_monitor.py off     软关机")
-        print("  python switch_monitor.py off_hard 硬关机")
-        print("  python switch_monitor.py standby 待机")
-        print("  python switch_monitor.py suspend 挂起")
+    if action in PORT_MAP:
+        src = PORT_MAP[action]
+        with mon:
+            mon.set_input_source(src)
+            _write_state(src)
+            time.sleep(1)
+            return {"ok": True, "message": f"已切换到 {LABEL_MAP[src]}"}
+
+    return {"ok": False, "message": f"未知操作: {action}"}
+
+
+def switch(target: str = None):
+    target = (target or "toggle").lower().strip()
+
+    if target in ("server", "web", "serve") or target.startswith("server") or target.startswith("web"):
+        print("Web 服务已分离到 webserver.py")
+        print("用法: python webserver.py [--host HOST] [--port PORT] [--token TOKEN]")
         sys.exit(1)
 
-    src = PORT_MAP[target]
-    with mon:
-        print(f"正在切换到 {LABEL_MAP[src]}...")
-        mon.set_input_source(src)
-        _write_state(src)
-        time.sleep(1)
-        print(f"已切换到 {LABEL_MAP[src]} ✓")
+    result = _execute(target)
+    if result["ok"]:
+        print(result["message"])
+    else:
+        print(f"错误: {result['message']}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

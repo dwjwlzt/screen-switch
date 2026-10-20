@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>显示器控制</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#0f1115;color:#e4e6eb;min-height:100vh;padding:20px;display:flex;flex-direction:column;gap:18px}
+h1{font-size:22px;font-weight:600;text-align:center;color:#fff}
+.status{background:#1a1d25;border-radius:14px;padding:16px 20px;font-size:15px;text-align:center;border:1px solid #2a2f3a}
+.status .val{color:#5ee7df;font-weight:600}
+.section-title{font-size:13px;color:#8b8f9a;text-transform:uppercase;letter-spacing:1px;padding-left:4px}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+.grid.single{grid-template-columns:1fr}
+button{background:#252a35;color:#fff;border:none;border-radius:14px;padding:22px 16px;font-size:17px;font-weight:600;cursor:pointer;transition:transform .08s,background .15s;border:1px solid #303644}
+button:active{transform:scale(.96)}
+button:hover{background:#2f3545}
+button.dp{background:linear-gradient(135deg,#3b82f6,#1d4ed8);border:none}
+button.hdmi1{background:linear-gradient(135deg,#ef4444,#b91c1c);border:none}
+button.hdmi2{background:linear-gradient(135deg,#f97316,#c2410c);border:none}
+button.power-on{background:linear-gradient(135deg,#10b981,#059669);border:none}
+button.power-off{background:linear-gradient(135deg,#6b7280,#374151);border:none}
+button.toggle{background:linear-gradient(135deg,#8b5cf6,#6d28d9);border:none}
+.msg{text-align:center;font-size:14px;color:#5ee7df;min-height:20px;transition:opacity .3s}
+.msg.err{color:#f87171}
+.token-bar{display:flex;gap:8px}
+.token-bar input{flex:1;background:#1a1d25;border:1px solid #2a2f3a;border-radius:10px;padding:10px 14px;color:#e4e6eb;font-size:15px;outline:none}
+.token-bar input:focus{border-color:#5ee7df}
+</style>
+</head>
+<body>
+<h1>🖥️ 显示器控制</h1>
+<div class="status" id="status">点击按钮查询状态</div>
+<div class="section-title">输入源切换</div>
+<div class="grid">
+<button class="dp" onclick="cmd('dp')">DP</button>
+<button class="hdmi1" onclick="cmd('hdmi1')">HDMI 1</button>
+<button class="hdmi2" onclick="cmd('hdmi2')">HDMI 2</button>
+<button class="toggle" onclick="cmd('toggle')">🔄 循环切换</button>
+</div>
+<div class="section-title">电源控制</div>
+<div class="grid single">
+<button class="power-on" onclick="cmd('on')">⚡ 开机</button>
+</div>
+<div class="grid">
+<button class="power-off" onclick="cmd('standby')">💤 待机</button>
+<button class="power-off" onclick="cmd('off_soft')">⏻ 关闭</button>
+</div>
+<div class="section-title">操作反馈</div>
+<div class="msg" id="msg"></div>
+<script>
+var token = localStorage.getItem('ss_token') || '';
+function toast(m, isErr){
+  var el = document.getElementById('msg');
+  el.textContent = m;
+  el.className = 'msg' + (isErr ? ' err' : '');
+  setTimeout(function(){ el.textContent=''; }, 3000);
+}
+async function cmd(action){
+  var body = JSON.stringify({action:action, token:token});
+  try{
+    var r = await fetch('/api/exec',{method:'POST',headers:{'Content-Type':'application/json'},body:body});
+    var j = await r.json();
+    toast(j.message, !j.ok);
+    if(j.ok) setTimeout(queryStatus, 1200);
+  }catch(e){ toast('请求失败: '+e.message, true); }
+}
+async function queryStatus(){
+  try{
+    var r = await fetch('/api/status?token='+encodeURIComponent(token));
+    var j = await r.json();
+    if(j.ok){
+      document.getElementById('status').innerHTML = 
+        '输入源: <span class="val">'+(j.input_source||'?')+'</span> &nbsp;|&nbsp; 电源: <span class="val">'+(j.power||'?')+'</span>';
+    }
+  }catch(e){}
+}
+queryStatus();
+</script>
+</body>
+</html>
