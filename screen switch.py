@@ -10,12 +10,22 @@ PORT_MAP = {
     "dp1": InputSource.DP1,
     "hdmi": InputSource.HDMI1,
     "hdmi1": InputSource.HDMI1,
+    "hdmi2": InputSource.HDMI2,
 }
 
 LABEL_MAP = {
     InputSource.DP1: "DP",
-    InputSource.HDMI1: "HDMI",
+    InputSource.HDMI1: "HDMI1",
+    InputSource.HDMI2: "HDMI2",
 }
+
+VCP_NAME_MAP = {
+    15: "DP",
+    17: "HDMI1",
+    18: "HDMI2",
+}
+
+CYCLE = [InputSource.DP1, InputSource.HDMI1, InputSource.HDMI2]
 
 
 def _write_state(src: InputSource):
@@ -41,6 +51,21 @@ def _query_vcp(mon):
         return None
 
 
+def _next_in_cycle(vcp: int | None, cached: str | None) -> InputSource:
+    if vcp is not None and vcp in VCP_NAME_MAP:
+        try:
+            current_src = InputSource(vcp)
+            idx = CYCLE.index(current_src)
+            return CYCLE[(idx + 1) % len(CYCLE)]
+        except ValueError:
+            pass
+
+    for i, label in enumerate(["DP", "HDMI1", "HDMI2"]):
+        if cached == label:
+            return CYCLE[(i + 1) % len(CYCLE)]
+    return CYCLE[0]
+
+
 def switch(target: str = None):
     monitors = list(get_monitors())
     if not monitors:
@@ -54,7 +79,7 @@ def switch(target: str = None):
         with mon:
             vcp = _query_vcp(mon)
             if vcp is not None:
-                name = {15: "DP", 16: "HDMI"}.get(vcp, f"VCP={vcp}")
+                name = VCP_NAME_MAP.get(vcp, f"VCP={vcp}")
                 print(f"当前输入源: {name}")
             else:
                 cached = _read_state()
@@ -67,14 +92,8 @@ def switch(target: str = None):
     if target == "toggle":
         with mon:
             vcp = _query_vcp(mon)
-            if vcp is not None:
-                next_src = InputSource.HDMI1 if vcp == 15 else InputSource.DP1
-            else:
-                cached = _read_state()
-                if cached == "HDMI":
-                    next_src = InputSource.DP1
-                else:
-                    next_src = InputSource.HDMI1
+            cached = _read_state()
+            next_src = _next_in_cycle(vcp, cached)
             print(f"切换到 {LABEL_MAP[next_src]}...")
             mon.set_input_source(next_src)
             _write_state(next_src)
@@ -84,10 +103,11 @@ def switch(target: str = None):
 
     if target not in PORT_MAP:
         print("用法:")
-        print("  python switch_monitor.py dp     切到 DP")
-        print("  python switch_monitor.py hdmi   切到 HDMI")
-        print("  python switch_monitor.py toggle DP/HDMI 循环切换")
-        print("  python switch_monitor.py status 查询状态")
+        print("  python switch_monitor.py dp      切到 DP")
+        print("  python switch_monitor.py hdmi1   切到 HDMI1")
+        print("  python switch_monitor.py hdmi2   切到 HDMI2")
+        print("  python switch_monitor.py toggle  DP / HDMI1 / HDMI2 循环切换")
+        print("  python switch_monitor.py status  查询状态")
         sys.exit(1)
 
     src = PORT_MAP[target]
