@@ -48,12 +48,27 @@ _MONITORPOWER_OFF = 2
 _MONITORPOWER_STANDBY = 1
 
 
+_post_message_ready = False
+
+
 def _win32_monitor_power(action: int):
+    global _post_message_ready
     try:
-        ctypes.windll.user32.PostMessageW(
-            _HWND_BROADCAST, _WM_SYSCOMMAND, _SC_MONITORPOWER, action
+        user32 = ctypes.windll.user32
+        if not _post_message_ready:
+            user32.PostMessageW.argtypes = [
+                ctypes.c_void_p,
+                ctypes.c_uint,
+                ctypes.c_size_t,
+                ctypes.c_ssize_t,
+            ]
+            user32.PostMessageW.restype = ctypes.c_bool
+            _post_message_ready = True
+        return bool(
+            user32.PostMessageW(
+                _HWND_BROADCAST, _WM_SYSCOMMAND, _SC_MONITORPOWER, action
+            )
         )
-        return True
     except Exception:
         return False
 
@@ -107,7 +122,7 @@ def _autostart_install(target_port: str = "dp"):
         f'ws.Run """{pythonw}"" ""{SCRIPT_PATH}"" {target_port}", 0, False\r\n'
     )
 
-    with open(vbs_path, "w", encoding="utf-8") as f:
+    with open(vbs_path, "w", encoding="utf-16", newline="") as f:
         f.write(vbs_content)
 
     print(f"已安装开机自启 (启动后自动切到 {target_port.upper()})")
@@ -180,7 +195,7 @@ def _next_in_cycle(vcp: int | None, cached: str | None) -> InputSource:
     return CYCLE[0]
 
 
-def _execute(action: str) -> dict:
+def _execute_inner(action: str) -> dict:
     action = (action or "toggle").lower().strip()
 
     if action.startswith("autostart"):
@@ -278,6 +293,14 @@ def _execute(action: str) -> dict:
             return {"ok": True, "message": f"已切换到 {LABEL_MAP[src]}"}
 
     return {"ok": False, "message": f"未知操作: {action}"}
+
+
+def _execute(action: str) -> dict:
+    """执行入口：底层 DDC/CI 或 Win32 异常统一转成 ok=False，避免 Web 端 500。"""
+    try:
+        return _execute_inner(action)
+    except Exception as exc:
+        return {"ok": False, "message": f"操作失败: {exc}"}
 
 
 def switch(target: str = None):

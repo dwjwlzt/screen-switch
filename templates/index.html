@@ -27,11 +27,17 @@ button.toggle{background:linear-gradient(135deg,#8b5cf6,#6d28d9);border:none}
 .token-bar{display:flex;gap:8px}
 .token-bar input{flex:1;background:#1a1d25;border:1px solid #2a2f3a;border-radius:10px;padding:10px 14px;color:#e4e6eb;font-size:15px;outline:none}
 .token-bar input:focus{border-color:#5ee7df}
+.token-bar button{padding:10px 16px;font-size:15px;border-radius:10px;background:#2f3545}
 </style>
 </head>
 <body>
 <h1>🖥️ 显示器控制</h1>
 <div class="status" id="status">点击按钮查询状态</div>
+<div class="section-title">访问令牌</div>
+<div class="token-bar">
+<input id="tokenInput" type="password" placeholder="未设置 token 可留空" autocomplete="off">
+<button type="button" onclick="saveToken()">保存</button>
+</div>
 <div class="section-title">输入源切换</div>
 <div class="grid">
 <button class="dp" onclick="cmd('dp')">DP</button>
@@ -50,17 +56,31 @@ button.toggle{background:linear-gradient(135deg,#8b5cf6,#6d28d9);border:none}
 <div class="section-title">操作反馈</div>
 <div class="msg" id="msg"></div>
 <script>
-var token = localStorage.getItem('ss_token') || '';
+var qs = new URLSearchParams(location.search);
+var token = qs.get('token') || localStorage.getItem('ss_token') || '';
+if (qs.get('token')) {
+  localStorage.setItem('ss_token', qs.get('token'));
+  history.replaceState(null, '', location.pathname);
+}
 function toast(m, isErr){
   var el = document.getElementById('msg');
   el.textContent = m;
   el.className = 'msg' + (isErr ? ' err' : '');
   setTimeout(function(){ el.textContent=''; }, 3000);
 }
+function saveToken(){
+  token = document.getElementById('tokenInput').value.trim();
+  if (token) localStorage.setItem('ss_token', token);
+  else localStorage.removeItem('ss_token');
+  toast(token ? 'Token 已保存' : '已清空 Token');
+  queryStatus();
+}
+document.getElementById('tokenInput').value = token;
 async function cmd(action){
   var body = JSON.stringify({action:action, token:token});
   try{
     var r = await fetch('/api/exec',{method:'POST',headers:{'Content-Type':'application/json'},body:body});
+    if(r.status === 401){ toast('Token 无效，请在下方填写后保存', true); return; }
     var j = await r.json();
     toast(j.message, !j.ok);
     if(j.ok) setTimeout(queryStatus, 1200);
@@ -69,6 +89,10 @@ async function cmd(action){
 async function queryStatus(){
   try{
     var r = await fetch('/api/status?token='+encodeURIComponent(token));
+    if(r.status === 401){
+      document.getElementById('status').textContent = '需要 Token：请在下方填写后点击保存';
+      return;
+    }
     var j = await r.json();
     if(j.ok){
       document.getElementById('status').innerHTML = 

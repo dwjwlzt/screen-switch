@@ -81,7 +81,11 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         try:
             data = json.loads(raw.decode("utf-8"))
         except Exception:
-            data = {}
+            self._send_json({"ok": False, "message": "请求体不是合法 JSON"}, 400)
+            return
+        if not isinstance(data, dict):
+            self._send_json({"ok": False, "message": "请求体必须是 JSON 对象"}, 400)
+            return
 
         if parsed.path == "/api/exec":
             if not self._check_token(data):

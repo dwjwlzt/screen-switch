@@ -95,17 +95,17 @@ python webserver.py --host 127.0.0.1
 
 1. 手机和电脑连**同一个 WiFi**
 2. 手机浏览器打开 `http://` + 电脑显示的那个局域网地址（比如 `http://192.168.3.2:8765`）
-3. 如果设置了 token，首次打开会自动带上（也可以在页面里手动传）
+3. 如果设置了 token，有两种方式：在页面顶部「访问令牌」里填写后点保存，或直接打开 `http://电脑地址:8765/?token=你的token`（会自动保存并清理地址栏）
 4. 页面上大按钮直接操作：切输入源、开关显示器、待机
 
 ### API 接口
 
-所有接口返回 JSON，`ok` 字段表示成功与否。
+所有接口返回 JSON，`ok` 字段表示成功与否。启动时带了 `--token` 的话，GET 请求加 `?token=xxx`，POST 在 body 里带 `"token": "xxx"`；不带或错误会返回 401。
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/` | 返回手机控制页面 |
-| GET | `/api/status` | 查询当前输入源和电源状态 |
+| GET | `/api/status?token=xxx` | 查询当前输入源和电源状态 |
 | POST | `/api/exec` | 执行操作，body 为 `{"action": "dp", "token": "..."}` |
 
 `action` 可取值：`dp` / `hdmi1` / `hdmi2` / `toggle` / `on` / `off` / `off_soft` / `off_hard` / `standby` / `suspend` / `status`
