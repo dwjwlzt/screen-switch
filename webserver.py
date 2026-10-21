@@ -6,7 +6,7 @@ import socket
 import sys
 import urllib.parse
 
-_core = importlib.import_module("screen switch")
+_core = importlib.import_module("screen_switch")
 
 # Windows 控制台默认 GBK，启动横幅里的特殊字符会导致编码报错，统一替换为可打印字符
 if hasattr(sys.stdout, "reconfigure"):

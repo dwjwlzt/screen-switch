@@ -6,10 +6,13 @@
 
 ```
 屏幕切换/
-├── screen switch.py       核心逻辑 + CLI 入口
+├── tray.py                系统托盘入口（打包 exe 用）
+├── screen_switch.py       核心逻辑 + CLI 入口
 ├── webserver.py           局域网 HTTP 服务（手机远程控制）
 ├── templates/
-│   └── index.html         手机端控制页面
+│   ├── index.html         手机端控制页面
+│   └── favicon.png        网页图标
+├── .gitignore             忽略构建产物、图标等
 ├── requirements.txt       依赖
 └── .last_input            上次切换的输入源（自动生成）
 ```
@@ -39,25 +42,25 @@ pip install -r requirements.txt
 
 ```bash
 # 查询当前状态
-python "screen switch.py" status
+python "screen_switch.py" status
 
 # 切换输入源
-python "screen switch.py" dp
-python "screen switch.py" hdmi1
-python "screen switch.py" hdmi2
+python "screen_switch.py" dp
+python "screen_switch.py" hdmi1
+python "screen_switch.py" hdmi2
 
 # 循环切换 DP → HDMI1 → HDMI2 → DP
-python "screen switch.py" toggle
+python "screen_switch.py" toggle
 
 # 电源控制
-python "screen switch.py" off       # 软关机
-python "screen switch.py" on        # 开机
-python "screen switch.py" standby   # 待机
-python "screen switch.py" suspend   # 挂起
-python "screen switch.py" off_hard  # 硬关机
+python "screen_switch.py" off       # 软关机
+python "screen_switch.py" on        # 开机
+python "screen_switch.py" standby   # 待机
+python "screen_switch.py" suspend   # 挂起
+python "screen_switch.py" off_hard  # 硬关机
 
 # 开机自动切到 DP
-python "screen switch.py" autostart enable dp
+python "screen_switch.py" autostart enable dp
 ```
 
 ## 手机远程控制
@@ -134,21 +137,21 @@ curl -X POST http://127.0.0.1:8765/api/exec \
 
 | 命令 | 说明 |
 |------|------|
-| `python screen switch.py dp` | 切到 DisplayPort |
-| `python screen switch.py hdmi1` | 切到 HDMI 1 |
-| `python screen switch.py hdmi2` | 切到 HDMI 2 |
-| `python screen switch.py toggle` | 三端口循环切换（默认行为，无参数运行即执行此命令） |
-| `python screen switch.py status` | 查询当前输入源和电源状态 |
+| `python screen_switch.py dp` | 切到 DisplayPort |
+| `python screen_switch.py hdmi1` | 切到 HDMI 1 |
+| `python screen_switch.py hdmi2` | 切到 HDMI 2 |
+| `python screen_switch.py toggle` | 三端口循环切换（默认行为，无参数运行即执行此命令） |
+| `python screen_switch.py status` | 查询当前输入源和电源状态 |
 
 ### 电源控制
 
 | 命令 | 说明 |
 |------|------|
-| `python screen switch.py on` | 开机（Win32 API + DDC/CI 双保险） |
-| `python screen switch.py off` | 软关机（off_soft，显示器进入低功耗） |
-| `python screen switch.py off_hard` | 硬关机（off_hard） |
-| `python screen switch.py standby` | 待机 |
-| `python screen switch.py suspend` | 挂起 |
+| `python screen_switch.py on` | 开机（Win32 API + DDC/CI 双保险） |
+| `python screen_switch.py off` | 软关机（off_soft，显示器进入低功耗） |
+| `python screen_switch.py off_hard` | 硬关机（off_hard） |
+| `python screen_switch.py standby` | 待机 |
+| `python screen_switch.py suspend` | 挂起 |
 
 电源控制采用 DDC/CI + Windows Win32 API `PostMessage(WM_SYSCOMMAND, SC_MONITORPOWER)` 双保险机制，确保在不同显示器上都生效。
 
@@ -156,9 +159,9 @@ curl -X POST http://127.0.0.1:8765/api/exec \
 
 | 命令 | 说明 |
 |------|------|
-| `python screen switch.py autostart enable [目标]` | 安装开机自启，目标为 `dp` / `hdmi1` / `hdmi2`，默认 dp |
-| `python screen switch.py autostart disable` | 取消开机自启 |
-| `python screen switch.py autostart status` | 查看当前自启状态 |
+| `python screen_switch.py autostart enable [目标]` | 安装开机自启，目标为 `dp` / `hdmi1` / `hdmi2`，默认 dp |
+| `python screen_switch.py autostart disable` | 取消开机自启 |
+| `python screen_switch.py autostart status` | 查看当前自启状态 |
 
 自启实现：在 Windows 启动文件夹写入 `ScreenSwitch.vbs`，开机等 8 秒（让 DDC/CI 就绪）后无窗口执行切换。
 
@@ -251,26 +254,33 @@ toggle 时的信任策略：
 Windows 启动
     → 启动文件夹 ScreenSwitch.vbs 触发
     → WScript.Sleep 8000（等 8 秒让 DDC/CI 就绪）
-    → pythonw.exe "screen switch.py" dp（无窗口执行，不弹黑框）
+    → pythonw.exe "screen_switch.py" dp（无窗口执行，不弹黑框）
     → 切换到 DP，写入 .last_input = "DP"
 ```
 
 ### 架构图
 
 ```
-                 ┌──────────────────┐
-                 │   templates/     │
-                 │   index.html     │  手机控制页面
-                 └────────┬─────────┘
-                          │ HTTP
-┌─────────────────────────┴─────────────────────────┐
-│                  webserver.py                      │
+┌──────────────────────────────────────────┐
+│               tray.py                    │
+│  系统托盘 (pystray) + 启动 webserver      │
+└─────────────────────────┬────────────────┘
+                          │ 线程启动
+                 ┌────────┴─────────┐
+                 ▼                  │
+    ┌──────────────────┐            │
+    │   templates/     │            │
+    │   index.html     │            │
+    └────────┬─────────┘            │
+             │ HTTP                 │
+┌────────────┴──────────────────────┴────────────────┐
+│                  webserver.py                       │
 │   http.server  (GET /  POST /api/exec  GET /api/status)
-│   importlib 导入  screen switch 模块               │
+│   importlib 导入  screen_switch 模块               │
 └─────────────────────────┬─────────────────────────┘
                           │ _execute(action) → dict
 ┌─────────────────────────┴─────────────────────────┐
-│              screen switch.py                      │
+│              screen_switch.py                      │
 │                                                     │
 │  ┌──────────────────────────────────────────┐      │
 │  │           命令行入口 switch()             │      │
