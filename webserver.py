@@ -8,7 +8,18 @@ import urllib.parse
 
 _core = importlib.import_module("screen switch")
 
+# Windows 控制台默认 GBK，启动横幅里的特殊字符会导致编码报错，统一替换为可打印字符
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(errors="replace")
+
 TEMPLATE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates")
+
+# 站点图标等静态资源白名单：请求路径 -> (templates 下文件名, Content-Type)
+STATIC_FILES = {
+    "/favicon.png": ("favicon.png", "image/png"),
+    "/favicon.ico": ("favicon.png", "image/png"),
+    "/apple-touch-icon.png": ("favicon.png", "image/png"),
+}
 
 
 def _get_lan_ip():
@@ -48,6 +59,23 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         params = urllib.parse.parse_qs(parsed.query)
         params = {k: v[0] for k, v in params.items()}
+
+        if parsed.path in STATIC_FILES:
+            filename, content_type = STATIC_FILES[parsed.path]
+            file_path = os.path.join(TEMPLATE_DIR, filename)
+            try:
+                with open(file_path, "rb") as f:
+                    body = f.read()
+            except FileNotFoundError:
+                self._send_json({"ok": False, "message": "Not Found"}, 404)
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "public, max-age=86400")
+            self.end_headers()
+            self.wfile.write(body)
+            return
 
         if parsed.path == "/":
             html_path = os.path.join(TEMPLATE_DIR, "index.html")
